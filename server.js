@@ -97,33 +97,54 @@ wss.on('connection', (ws) => {
                 }
 
                 case 'start_battle_state': {
-                    if (rooms.has(currentRoomId)) {
-                        const room = rooms.get(currentRoomId);
-                        if (!room.gameState) {
-                            room.gameState = { 
-                                cats: {},
-                                turn: null
-                            };
-                        }
-                        
-                        // Si c'est l'initialisation du premier chat
-                        const isNewPlayer = !room.gameState.cats[currentPlayerId];
-                        
-                        room.gameState.cats[currentPlayerId] = {
-                            type: data.cat.type,
-                            currentHp: data.cat.hp,
-                            maxHp: data.cat.hp,
-                            // On garde en mémoire ou on met à jour le nombre total de combattants (1, 2 ou 3)
-                            totalFighters: data.totalFighters || (room.gameState.cats[currentPlayerId]?.totalFighters || 1),
-                            koCount: isNewPlayer ? 0 : (room.gameState.cats[currentPlayerId]?.koCount || 0)
-                        };
+    if (rooms.has(currentRoomId)) {
+        const room = rooms.get(currentRoomId);
+        if (!room.gameState) {
+            room.gameState = { 
+                cats: {},
+                turn: null
+            };
+        }
+        
+        const isNewPlayer = !room.gameState.cats[currentPlayerId];
+        
+        room.gameState.cats[currentPlayerId] = {
+            type: data.cat.type,
+            currentHp: data.cat.hp,
+            maxHp: data.cat.hp,
+            totalFighters: data.totalFighters || (room.gameState.cats[currentPlayerId]?.totalFighters || 1),
+            koCount: isNewPlayer ? 0 : (room.gameState.cats[currentPlayerId]?.koCount || 0)
+        };
 
-                        if (!room.gameState.turn) {
-                            room.gameState.turn = currentPlayerId;
-                        } 
-                        console.log(`[BATTLE] Chat enregistré pour ${currentPlayerId} (Équipe de ${room.gameState.cats[currentPlayerId].totalFighters} chats)`);
-                    }
-                    break;
+        console.log(`[BATTLE] Données reçues pour ${currentPlayerId}`);
+
+        // Débloquer le combat si les deux joueurs ont envoyé leurs données
+        const playerIds = room.clients.map(c => c.playerId);
+        const allReady = playerIds.length === 2 && playerIds.every(id => room.gameState.cats[id]);
+
+        if (allReady && !room.gameState.turn) {
+            // Par défaut, l'hôte (le premier inscrit ou le premier client de la liste) commence
+            room.gameState.turn = room.clients[0].playerId; 
+            console.log(`[BATTLE] Les deux joueurs sont prêts. Premier tour attribué à : ${room.gameState.turn}`);
+
+            // On envoie un faux "battle_turn_result" initial pour réveiller les interfaces
+            room.clients.forEach(client => {
+                client.ws.send(JSON.stringify({
+                    event: 'battle_turn_result',
+                    attackerId: null,
+                    targetId: null,
+                    attackName: "Initialisation",
+                    damageDealt: 0,
+                    targetNewHp: room.gameState.cats[client.playerId].currentHp,
+                    nextTurnPlayerId: room.gameState.turn,
+                    isKo: false,
+                    isGameOver: false
+                }));
+            });
+        }
+    }
+    break;
+}
                 }
 
                 case 'execute_attack': {
