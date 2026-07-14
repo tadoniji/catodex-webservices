@@ -2,21 +2,25 @@ import express from 'express';
 import { WebSocketServer } from 'ws';
 import http from 'http';
 import { sessionManager } from './sessionManager.js';
-import { battleEngine } from './battleEngine.js'; // <-- 1. Importation du moteur de combat indispensable !
+import { battleEngine } from './battleEngine.js';
 
 const app = express();
 app.use(express.json());
 
+// Éviter les blocages CORS simples
 app.use((req, res, next) => {
     res.header("Access-Control-Allow-Origin", "*");
     res.header("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept");
     next();
 });
 
+// Route de diagnostic "Ping" pour réveiller le serveur Render en tâche de fond
+app.get('/', (req, res) => {
+    res.send("🚀 Cat O'Dex WebServices est en ligne et réveillé !");
+});
+
 const server = http.createServer(app);
 const wss = new WebSocketServer({ server });
-
-// rooms stockera désormais un objet structuré : { clients: [], gameState: { cats: {}, turn: null } }
 const rooms = new Map(); 
 
 // --- ROUTE HTTP : Création de la session ---
@@ -60,7 +64,6 @@ wss.on('connection', (ws) => {
                     currentRoomId = sessionId;
                     currentPlayerId = playerId;
 
-                    // Initialisation de la room avec sa structure complète si elle n'existe pas
                     if (!rooms.has(currentRoomId)) {
                         rooms.set(currentRoomId, {
                             clients: [],
@@ -76,7 +79,7 @@ wss.on('connection', (ws) => {
                     }
 
                     room.clients.push({ ws, playerId });
-                    console.log(`[WS] Joueur ${playerId} a rejoint le salon AmongUs [${currentRoomId}]`);
+                    console.log(`[WS] Joueur ${playerId} a rejoint le salon [${currentRoomId}]`);
 
                     if (room.clients.length === 2) {
                         session.status = "connected";
@@ -102,18 +105,22 @@ wss.on('connection', (ws) => {
                             };
                         }
                         
-                        // Enregistrement du chat actif du joueur
+                        // Si c'est l'initialisation du premier chat
+                        const isNewPlayer = !room.gameState.cats[currentPlayerId];
+                        
                         room.gameState.cats[currentPlayerId] = {
                             type: data.cat.type,
                             currentHp: data.cat.hp,
-                            maxHp: data.cat.hp
+                            maxHp: data.cat.hp,
+                            // On garde en mémoire ou on met à jour le nombre total de combattants (1, 2 ou 3)
+                            totalFighters: data.totalFighters || (room.gameState.cats[currentPlayerId]?.totalFighters || 1),
+                            koCount: isNewPlayer ? 0 : (room.gameState.cats[currentPlayerId]?.koCount || 0)
                         };
 
-                        // Le premier joueur qui envoie ses données (ou l'hôte) prend le premier tour
                         if (!room.gameState.turn) {
                             room.gameState.turn = currentPlayerId;
                         } 
-                        console.log(`[BATTLE] Chat enregistré pour ${currentPlayerId} dans le salon [${currentRoomId}]`);
+                        console.log(`[BATTLE] Chat enregistré pour ${currentPlayerId} (Équipe de ${room.gameState.cats[currentPlayerId].totalFighters} chats)`);
                     }
                     break;
                 }
@@ -128,7 +135,6 @@ wss.on('connection', (ws) => {
                             return;
                         }
 
-                        // Sécurité : Est-ce bien le tour de ce joueur ?
                         if (gameState.turn !== currentPlayerId) {
                             ws.send(JSON.stringify({ event: 'error', message: "Ce n'est pas ton tour !" }));
                             return;
@@ -149,10 +155,9 @@ wss.on('connection', (ws) => {
                             return;
                         }
 
-                        const attack = data.attack; // ex: { name: "Griffure", damage: 15 }
+                        const attack = data.attack;
                         const qteMultiplier = data.qteMultiplier || 1.0; 
 
-                        // Calcul des dégâts via notre moteur importé
                         const finalDamage = battleEngine.calculateFinalDamage(
                             attack, 
                             attackerCat.type, 
@@ -160,13 +165,21 @@ wss.on('connection', (ws) => {
                             qteMultiplier
                         );
 
-                        // Application des dégâts
                         targetCat.currentHp = Math.max(0, targetCat.currentHp - finalDamage);
 
-                        // Changement de tour
-                        gameState.turn = opponentId;
+                        const isKo = targetCat.currentHp === 0;
+                        if (isKo) {
+                            targetCat.koCount += 1;
+                        }
 
-                        // Notification aux deux joueurs
+                        // Détermination de la fin de partie (si le nombre de K.O. atteint la taille de l'équipe adverse)
+                        const isGameOver = targetCat.koCount >= targetCat.totalFighters;
+
+                        // Changement de tour (uniquement s'il n'y a pas K.O., pour laisser l'autre choisir son prochain chat)
+                        if (!isKo && !isGameOver) {
+                            gameState.turn = opponentId;
+                        }
+
                         room.clients.forEach(client => {
                             client.ws.send(JSON.stringify({
                                 event: 'battle_turn_result',
@@ -176,7 +189,8 @@ wss.on('connection', (ws) => {
                                 damageDealt: finalDamage,
                                 targetNewHp: targetCat.currentHp,
                                 nextTurnPlayerId: gameState.turn,
-                                isKo: targetCat.currentHp === 0
+                                isKo: isKo,
+                                isGameOver: isGameOver
                             }));
                         });
                     }
@@ -223,5 +237,5 @@ wss.on('connection', (ws) => {
 
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
-    console.log(`🚀 Serveur en ligne. Prêt pour les codes à 6 lettres sur le port ${PORT}`);
+    console.log(`🚀 Serveur en ligne sur le port ${PORT}`);
 });
