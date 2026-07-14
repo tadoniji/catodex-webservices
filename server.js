@@ -5,6 +5,13 @@ import { sessionManager } from './sessionManager.js';
 import { battleEngine } from './battleEngine.js';
 
 const app = express();
+app.use((req, res, next) => {
+    if (req.path !== '/') { // Évite de polluer avec les pings de Render
+        console.log(`\n📡 [HTTP] ${req.method} ${req.path}`);
+        console.log(`📦 [HTTP BODY]:`, JSON.stringify(req.body, null, 2));
+    }
+    next();
+});
 app.use(express.json());
 app.use(express.static('public'));
 
@@ -46,7 +53,12 @@ wss.on('connection', (ws) => {
 
     ws.on('message', (message) => {
         try {
+            const rawText = message.toString();
+            console.log(`\n📬 [WS REÇU] Brut de ${currentPlayerId || 'Inconnu'}:`, rawText);
+
+            const data = JSON.parse(rawText);
             const data = JSON.parse(message);
+            
 
             switch (data.action) {
                 case 'join_room': {
