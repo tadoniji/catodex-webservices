@@ -1,8 +1,96 @@
-<script>
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cat O'Dex - Simulateur Joueur 2</title>
+    <style>
+        body { font-family: 'Segoe UI', sans-serif; background: #0f0f1a; color: #fff; padding: 20px; max-width: 800px; margin: auto; }
+        h1 { color: #a855f7; text-align: center; }
+        .box { background: #1e1e2c; border: 1px solid #333; border-radius: 12px; padding: 20px; margin-bottom: 20px; }
+        input, button { padding: 10px; border-radius: 6px; border: none; margin: 5px 0; }
+        input[type="text"] { width: calc(100% - 22px); background: #2d2d3d; color: #fff; border: 1px solid #444; }
+        button { background: #a855f7; color: white; font-weight: bold; cursor: pointer; width: 100%; transition: 0.2s; }
+        button:hover { background: #bd73ff; }
+        button:disabled { background: #444; cursor: not-allowed; }
+        .grid-cats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px; margin-top: 15px; }
+        .cat-card { background: #252538; border: 2px solid #444; border-radius: 8px; padding: 12px; text-align: center; opacity: 0.5; transition: 0.3s; }
+        .cat-card.active { border-color: #22c55e; opacity: 1; box-shadow: 0 0 10px rgba(34, 197, 94, 0.2); }
+        .cat-card.ko { border-color: #ef4444; opacity: 0.3; }
+        .hp-bar { background: #444; height: 10px; border-radius: 5px; overflow: hidden; margin: 8px 0; }
+        .hp-fill { background: #22c55e; height: 100%; width: 100%; transition: 0.3s; }
+        .attack-btn { background: #3b82f6; font-size: 12px; padding: 6px; margin: 4px 0; width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .attack-btn:hover { background: #60a5fa; }
+        #log { background: #000; font-family: monospace; height: 140px; overflow-y: auto; padding: 10px; border-radius: 6px; color: #22c55e; font-size: 12px; }
+        .badge { background: #a855f7; padding: 3px 8px; border-radius: 4px; font-size: 11px; font-weight: bold; }
+    </style>
+</head>
+<body>
+
+    <h1>🎮 Simulateur de Joueur 2</h1>
+
+    <div class="box">
+        <h3>1. Connexion à la Session</h3>
+        <label for="roomCode">Code à 6 lettres du téléphone :</label>
+        <input type="text" id="roomCode" placeholder="Ex: KFDZ7X" style="text-transform: uppercase;">
+        <button id="connectBtn" onclick="window.connectToSession()">Rejoindre la partie</button>
+        <p id="connectionStatus" style="color: #eab308; margin-top: 10px;">Statut : Déconnecté</p>
+    </div>
+
+    <div id="battleArena" class="box" style="display: none;">
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+            <h3>2. Terrain de Combat (Équipe de 3)</h3>
+            <span id="turnIndicator" class="badge" style="background: #ef4444;">Tour adverse</span>
+        </div>
+
+        <div class="grid-cats">
+            <div id="cat-0" class="cat-card">
+                <strong style="color: #ef4444;">Pyromiaou</strong>
+                <div class="hp-bar"><div id="hp-fill-0" class="hp-fill"></div></div>
+                <small id="hp-text-0">120 / 120 PV</small>
+                <div class="attacks" style="margin-top: 10px;">
+                    <button class="attack-btn" id="btn-0-0" onclick="window.sendAttack('Flammèche', 20)">Flammèche (20)</button>
+                    <button class="attack-btn" id="btn-0-1" onclick="window.sendAttack('Lance-flamme', 35)">Lance-flamme (35)</button>
+                    <button class="attack-btn" id="btn-0-2" onclick="window.sendAttack('Griffe Ardente', 15)">Griffe Ardent (15)</button>
+                    <button class="attack-btn" id="btn-0-3" onclick="window.sendAttack('Rugissement', 0)">Rugissement (0)</button>
+                </div>
+            </div>
+
+            <div id="cat-1" class="cat-card">
+                <strong style="color: #22c55e;">Feuillou</strong>
+                <div class="hp-bar"><div id="hp-fill-1" class="hp-fill"></div></div>
+                <small id="hp-text-1">100 / 100 PV</small>
+                <div class="attacks" style="margin-top: 10px;">
+                    <button class="attack-btn" id="btn-1-0" onclick="window.sendAttack('Fouet Lianes', 18)">Fouet Lianes (18)</button>
+                    <button class="attack-btn" id="btn-1-1" onclick="window.sendAttack('Giga-Sangsue', 30)">Giga-Sangsue (30)</button>
+                    <button class="attack-btn" id="btn-1-2" onclick="window.sendAttack('Tranch\'Herbe', 25)">Tranch'Herbe (25)</button>
+                    <button class="attack-btn" id="btn-1-3" onclick="window.sendAttack('Poudre Dodo', 0)">Poudre Dodo (0)</button>
+                </div>
+            </div>
+
+            <div id="cat-2" class="cat-card">
+                <strong style="color: #eab308;">Volt</strong>
+                <div class="hp-bar"><div id="hp-fill-2" class="hp-fill"></div></div>
+                <small id="hp-text-2">90 / 90 PV</small>
+                <div class="attacks" style="margin-top: 10px;">
+                    <button class="attack-btn" id="btn-2-0" onclick="window.sendAttack('Éclair', 15)">Éclair (15)</button>
+                    <button class="attack-btn" id="btn-2-1" onclick="window.sendAttack('Tonnerre', 40)">Tonnerre (40)</button>
+                    <button class="attack-btn" id="btn-2-2" onclick="window.sendAttack('Cage-Éclair', 5)">Cage-Éclair (5)</button>
+                    <button class="attack-btn" id="btn-2-3" onclick="window.sendAttack('Vive-Attaque', 12)">Vive-Attaque (12)</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="box">
+        <h3>Journal d'événements</h3>
+        <div id="log">En attente d'initialisation...</div>
+    </div>
+
+    <script type="module">
         let ws;
         let myId = "SIMULATOR_BOT_J2";
         
-        // Configuration avec 4 attaques par chat pour respecter le modèle Cat.kt
         let team = [
             { 
                 name: "Pyromiaou", 
@@ -50,7 +138,7 @@
             logBox.scrollTop = logBox.scrollHeight;
         }
 
-        function connectToSession() {
+        window.connectToSession = function() {
             const code = document.getElementById('roomCode').value.toUpperCase().trim();
             if (code.length !== 6) return alert("Code invalide (6 lettres attendues)");
 
@@ -68,7 +156,7 @@
                 if (data.event === "room_ready") {
                     document.getElementById('connectionStatus').innerText = "Statut : Connecté au téléphone !";
                     document.getElementById('battleArena').style.display = "block";
-                    log("⚔️ Salon connecté ! Envoi de l'équipe de 3 chats fictifs...");
+                    log("Abonnement réussi ! Envoi de la structure d'équipe au serveur d'arbitrage...");
                     
                     updateActiveCatVisual();
                     sendStartBattleState();
@@ -88,11 +176,11 @@
                             const nextIndex = team.findIndex(c => c.hp > 0);
                             if (nextIndex !== -1) {
                                 activeCatIndex = nextIndex;
-                                log(`🔄 Envoi de <strong>${team[activeCatIndex].name}</strong> au combat !`);
+                                log(`🔄 Envoi de <strong>${team[activeCatIndex].name}</strong> sur le terrain !`);
                                 updateActiveCatVisual();
                                 sendStartBattleState(); 
                             } else {
-                                log("😭 Vous n'avez plus de chats disponibles. Défaite...");
+                                log("😭 Tous vos chats sont K.O. Fin du combat !");
                             }
                         }
                     }
@@ -115,35 +203,33 @@
                     log(`❌ Erreur : ${data.message}`);
                 }
             };
-        }
+        };
 
         function sendStartBattleState() {
-            // Le serveur reçoit l'état pour l'arbitrage
             ws.send(JSON.stringify({
                 action: "start_battle_state",
                 cat: { type: team[activeCatIndex].type, hp: team[activeCatIndex].hp },
                 totalFighters: team.length
             }));
 
-            // OPTIONNEL : Si ton appli Android a besoin de recevoir l'objet complet de l'adversaire
-            // au début via la passerelle de transit générique pour instancier ses classes, on le pousse ici :
+            // Envoi de la synchronisation de l'objet complet de l'adversaire (avec 4 attaques) via game_action
             ws.send(JSON.stringify({
                 action: "game_action",
                 payload: {
                     type: "opponent_team_sync",
-                    cat: team[activeCatIndex] // Contient bien les 4 attaques
+                    cat: team[activeCatIndex]
                 }
             }));
         }
 
-        function sendAttack(name, damage) {
+        window.sendAttack = function(name, damage) {
             if (!myTurn) return;
             ws.send(JSON.stringify({
                 action: "execute_attack",
                 attack: { name: name, damage: damage },
                 qteMultiplier: 1.0 
             }));
-        }
+        };
 
         function updateActiveCatVisual() {
             for (let i = 0; i < 3; i++) {
@@ -165,8 +251,14 @@
 
         function toggleAttackButtons(enable) {
             const btns = document.querySelectorAll('.attack-btn');
-            btns.forEach(b => b.disabled = !enable);
+            btns.forEach(b => {
+                // On active uniquement les boutons du chat en cours
+                const isCurrentCatBtn = b.id.startsWith(`btn-${activeCatIndex}-`);
+                b.disabled = !(enable && isCurrentCatBtn);
+            });
         }
 
         toggleAttackButtons(false);
     </script>
+</body>
+</html>
