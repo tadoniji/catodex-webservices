@@ -6,6 +6,7 @@ import { battleEngine } from './battleEngine.js';
 
 const app = express();
 app.use(express.json());
+app.use(express.static('public'));
 
 // Éviter les blocages CORS simples
 app.use((req, res, next) => {
