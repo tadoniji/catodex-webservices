@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cat O'Dex - Simulateur Joueur 2</title>
+    <style>
+        body { font-family: 'Segoe UI', sans-serif; background: #0f0f1a; color: #fff; padding: 20px; max-width: 800px; margin: auto; }
+        h1 { color: #a855f7; text-align: center; }
+        .box { background: #1e1e2c; border: 1px solid #333; border-radius: 12px; padding: 20px; margin-bottom: 20px; }
+        input, button { padding: 10px; border-radius: 6px; border: none; margin: 5px 0; }
+        input[type="text"] { width: calc(100% - 22px); background: #2d2d3d; color: #fff; border: 1px solid #444; }
+        button { background: #a855f7; color: white; font-weight: bold; cursor: pointer; width: 100%; transition: 0.2s; }
+        button:hover { background: #bd73ff; }
+        button:disabled { background: #444; cursor: not-allowed; }
+        .grid-cats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px; margin-top: 15px; }
+        .cat-card { background: #252538; border: 2px solid #444; border-radius: 8px; padding: 12px; text-align: center; opacity: 0.5; transition: 0.3s; }
+        .cat-card.active { border-color: #22c55e; opacity: 1; box-shadow: 0 0 10px rgba(34, 197, 94, 0.2); }
+        .cat-card.ko { border-color: #ef4444; opacity: 0.3; }
+        .hp-bar { background: #444; height: 10px; border-radius: 5px; overflow: hidden; margin: 8px 0; }
+        .hp-fill { background: #22c55e; height: 100%; width: 100%; transition: 0.3s; }
+        .attack-btn { background: #3b82f6; font-size: 12px; padding: 6px; margin: 4px 0; }
+        .attack-btn:hover { background: #60a5fa; }
+        #log { background: #000; font-family: monospace; height: 120px; overflow-y: auto; padding: 10px; border-radius: 6px; color: #22c55e; font-size: 12px; }
+        .badge { background: #a855f7; padding: 3px 8px; border-radius: 4px; font-size: 11px; font-weight: bold; }
+    </style>
+</head>
+<body>
+
+    <h1>🎮 Simulateur de Joueur 2</h1>
+
+    <!-- ÉTAPE 1 : CONNEXION -->
+    <div class="box">
+        <h3>1. Connexion à la Session</h3>
+        <label for="roomCode">Code à 6 lettres du téléphone :</label>
+        <input type="text" id="roomCode" placeholder="Ex: KFDZ7X" style="text-transform: uppercase;">
+        <button id="connectBtn" onclick="connectToSession()">Rejoindre la partie</button>
+        <p id="connectionStatus" style="color: #eab308; margin-top: 10px;">Statut : Déconnecté</p>
+    </div>
+
+    <!-- ÉTAPE 2 : LE COMBAT -->
+    <div id="battleArena" class="box" style="display: none;">
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+            <h3>2. Terrain de Combat (Équipe de 3)</h3>
+            <span id="turnIndicator" class="badge" style="background: #ef4444;">Tour adverse</span>
+        </div>
+
+        <div class="grid-cats">
+            <!-- CAT 1 (VOLCANIQUE) -->
+            <div id="cat-0" class="cat-card">
+                <strong style="color: #ef4444;">Pyromiaou</strong>
+                <div class="hp-bar"><div id="hp-fill-0" class="hp-fill"></div></div>
+                <small id="hp-text-0">120 / 120 PV</small>
+                <div class="attacks">
+                    <button class="attack-btn" onclick="sendAttack('Flammèche', 20)">Flammèche (20)</button>
+                    <button class="attack-btn" onclick="sendAttack('Lance-flamme', 35)">Lance-flamme (35)</button>
+                </div>
+            </div>
+
+            <!-- CAT 2 (SYLVESTRE) -->
+            <div id="cat-1" class="cat-card">
+                <strong style="color: #22c55e;">Feuillou</strong>
+                <div class="hp-bar"><div id="hp-fill-1" class="hp-fill"></div></div>
+                <small id="hp-text-1">100 / 100 PV</small>
+                <div class="attacks">
+                    <button class="attack-btn" onclick="sendAttack('Fouet Lianes', 18)">Fouet Lianes (18)</button>
+                    <button class="attack-btn" onclick="sendAttack('Giga-Sangsue', 30)">Giga-Sangsue (30)</button>
+                </div>
+            </div>
+
+            <!-- CAT 3 (ÉLECTRIQUE) -->
+            <div id="cat-2" class="cat-card">
+                <strong style="color: #eab308;">Volt</strong>
+                <div class="hp-bar"><div id="hp-fill-2" class="hp-fill"></div></div>
+                <small id="hp-text-2">90 / 90 PV</small>
+                <div class="attacks">
+                    <button class="attack-btn" onclick="sendAttack('Éclair', 15)">Éclair (15)</button>
+                    <button class="attack-btn" onclick="sendAttack('Tonnerre', 40)">Tonnerre (40)</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- JOURNAL DE COMBAT -->
+    <div class="box">
+        <h3>Journal d'événements</h3>
+        <div id="log">En attente d'initialisation...</div>
+    </div>
+
+    <script>
+        let ws;
+        let myId = "SIMULATOR_BOT_J2";
+        let team = [
+            { name: "Pyromiaou", type: "VOLCANIQUE", hp: 120, maxHp: 120, moves: [{name: 'Flammèche', damage: 20}, {name: 'Lance-flamme', damage: 35}] },
+            { name: "Feuillou", type: "SYLVESTRE", hp: 100, maxHp: 100, moves: [{name: 'Fouet Lianes', damage: 18}, {name: 'Giga-Sangsue', damage: 30}] },
+            { name: "Volt", type: "ÉLECTRIQUE", hp: 90, maxHp: 90, moves: [{name: 'Éclair', damage: 15}, {name: 'Tonnerre', damage: 40}] }
+        ];
+        let activeCatIndex = 0;
+        let myTurn = false;
+
+        function log(msg) {
+            const logBox = document.getElementById('log');
+            logBox.innerHTML += `<div>${msg}</div>`;
+            logBox.scrollTop = logBox.scrollHeight;
+        }
+
+        function connectToSession() {
+            const code = document.getElementById('roomCode').value.toUpperCase().trim();
+            if (code.length !== 6) return alert("Code invalide (6 lettres attendues)");
+
+            const wsUrl = window.location.protocol === 'https:' ? `wss://${window.location.host}` : `ws://${window.location.host}`;
+            ws = new WebSocket(wsUrl);
+
+            ws.onopen = () => {
+                document.getElementById('connectionStatus').innerText = "Statut : Connexion en cours...";
+                ws.send(JSON.stringify({ action: "join_room", sessionId: code, playerId: myId }));
+            };
+
+            ws.onmessage = (event) => {
+                const data = JSON.parse(event.data);
+                
+                if (data.event === "room_ready") {
+                    document.getElementById('connectionStatus').innerText = "Statut : Connecté au téléphone !";
+                    document.getElementById('battleArena').style.display = "block";
+                    log("⚔️ Salon connecté ! Envoi de l'équipe de 3 chats fictifs...");
+                    
+                    // Enregistrer le premier chat actif et annoncer une équipe de 3
+                    updateActiveCatVisual();
+                    sendStartBattleState();
+                }
+
+                if (data.event === "battle_turn_result") {
+                    log(`💥 <strong>${data.attackerId === myId ? 'Vous' : 'Téléphone'}</strong> utilise [${data.attackName}] (-${data.damageDealt} PV)`);
+                    
+                    // Si c'est nous qui avons été attaqués, on met à jour nos PV
+                    if (data.targetId === myId) {
+                        team[activeCatIndex].hp = data.targetNewHp;
+                        updateHpBar(activeCatIndex);
+                        
+                        if (data.isKo) {
+                            log(`💀 <strong>${team[activeCatIndex].name}</strong> est K.O. !`);
+                            document.getElementById(`cat-${activeCatIndex}`).classList.add('ko');
+                            
+                            // Chercher le prochain chat en vie
+                            const nextIndex = team.findIndex(c => c.hp > 0);
+                            if (nextIndex !== -1) {
+                                activeCatIndex = nextIndex;
+                                log(`🔄 Envoi de <strong>${team[activeCatIndex].name}</strong> au combat !`);
+                                updateActiveCatVisual();
+                                sendStartBattleState(); // On informe le serveur du nouveau chat
+                            } else {
+                                log("😭 Vous n'avez plus de chats disponibles. Défaite...");
+                            }
+                        }
+                    }
+
+                    // Gestion des tours
+                    myTurn = (data.nextTurnPlayerId === myId);
+                    const indicator = document.getElementById('turnIndicator');
+                    indicator.innerText = myTurn ? "À VOUS DE JOUER" : "TOUR ADVERSE";
+                    indicator.style.background = myTurn ? "#22c55e" : "#ef4444";
+                    
+                    // Bloquer/Débloquer les boutons d'attaques
+                    toggleAttackButtons(myTurn && team[activeCatIndex].hp > 0);
+                }
+
+                if (data.event === "opponent_disconnected") {
+                    log("🔌 Le téléphone s'est déconnecté.");
+                    document.getElementById('connectionStatus').innerText = "Statut : Déconnecté (partenaire parti)";
+                    toggleAttackButtons(false);
+                }
+
+                if (data.event === "error") {
+                    log(`❌ Erreur : ${data.message}`);
+                }
+            };
+        }
+
+        function sendStartBattleState() {
+            ws.send(JSON.stringify({
+                action: "start_battle_state",
+                cat: { type: team[activeCatIndex].type, hp: team[activeCatIndex].hp },
+                totalFighters: team.length
+            }));
+        }
+
+        function sendAttack(name, damage) {
+            if (!myTurn) return;
+            ws.send(JSON.stringify({
+                action: "execute_attack",
+                attack: { name: name, damage: damage },
+                qteMultiplier: 1.0 // QTE normal simulé
+            }));
+        }
+
+        function updateActiveCatVisual() {
+            for (let i = 0; i < 3; i++) {
+                const card = document.getElementById(`cat-${i}`);
+                if (i === activeCatIndex) {
+                    card.classList.add('active');
+                } else {
+                    card.classList.remove('active');
+                }
+            }
+        }
+
+        function updateHpBar(index) {
+            const cat = team[index];
+            const percent = Math.max(0, (cat.hp / cat.maxHp) * 100);
+            document.getElementById(`hp-fill-${index}`).style.width = percent + "%";
+            document.getElementById(`hp-text-${index}`).innerText = `${cat.hp} / ${cat.maxHp} PV`;
+        }
+
+        function toggleAttackButtons(enable) {
+            const btns = document.querySelectorAll('.attack-btn');
+            btns.forEach(b => b.disabled = !enable);
+        }
+
+        // Bloquer par défaut
+        toggleAttackButtons(false);
+    </script>
+</body>
+</html>
