@@ -1,64 +1,11 @@
-import express from 'express';
-import { WebSocketServer } from 'ws';
-import http from 'http';
-import { sessionManager } from './sessionManager.js';
-import { battleEngine } from './battleEngine.js';
-
-const app = express();
-app.use((req, res, next) => {
-    if (req.path !== '/') { // Évite de polluer avec les pings de Render
-        console.log(`\n📡 [HTTP] ${req.method} ${req.path}`);
-        console.log(`📦 [HTTP BODY]:`, JSON.stringify(req.body, null, 2));
-    }
-    next();
-});
-app.use(express.json());
-app.use(express.static('public'));
-
-app.use((req, res, next) => {
-    res.header("Access-Control-Allow-Origin", "*");
-    res.header("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept");
-    next();
-});
-
-app.get('/', (req, res) => {
-    res.send("🚀 Cat O'Dex WebServices est en ligne et réveillé !");
-});
-
-const server = http.createServer(app);
-const wss = new WebSocketServer({ server });
-const rooms = new Map(); 
-
-// --- ROUTE HTTP : Création de la session ---
-app.post('/api/session/create', (req, res) => {
-    const { type, playerId } = req.body;
-    
-    if (!type || !playerId) {
-        return res.status(400).json({ error: "Paramètres manquants." });
-    }
-
-    const session = sessionManager.createSession(type, playerId);
-    
-    res.status(201).json({
-        sessionId: session.id,
-        type: session.type,
-        expiresAt: session.createdAt + (5 * 60 * 1000)
-    });
-});
-
-// --- PASSERELLE WEBSOCKET ---
-wss.on('connection', (ws) => {
-    let currentRoomId = null;
-    let currentPlayerId = null;
-
-    ws.on('message', (message) => {
+ws.on('message', (message) => {
         try {
+            // 1. On convertit le message brut en texte
             const rawText = message.toString();
             console.log(`\n📬 [WS REÇU] Brut de ${currentPlayerId || 'Inconnu'}:`, rawText);
 
+            // 2. On parse le JSON UNE SEULE FOIS (sans duplication de 'const')
             const data = JSON.parse(rawText);
-            const data = JSON.parse(message);
-            
 
             switch (data.action) {
                 case 'join_room': {
@@ -126,7 +73,7 @@ wss.on('connection', (ws) => {
                             koCount: isNewPlayer ? 0 : (room.gameState.cats[currentPlayerId]?.koCount || 0)
                         };
 
-                        console.log(`[BATTLE] Données reçues pour ${currentPlayerId}`);
+                        console.log(`[BATTLE] Données validées pour ${currentPlayerId}`);
 
                         const playerIds = room.clients.map(c => c.playerId);
                         const allReady = playerIds.length === 2 && playerIds.every(id => room.gameState.cats[id]);
@@ -242,26 +189,3 @@ wss.on('connection', (ws) => {
             console.error("Erreur JSON:", err);
         }
     });
-
-    ws.on('close', () => {
-        if (currentRoomId && rooms.has(currentRoomId)) {
-            const room = rooms.get(currentRoomId);
-            const remainingClients = room.clients.filter(client => client.ws !== ws);
-            
-            if (remainingClients.length === 0) {
-                rooms.delete(currentRoomId);
-            } else {
-                room.clients = remainingClients;
-                remainingClients.forEach(client => {
-                    client.ws.send(JSON.stringify({ event: 'opponent_disconnected' }));
-                });
-            }
-            console.log(`[WS] Déconnexion du salon [${currentRoomId}]`);
-        }
-    });
-});
-
-const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => {
-    console.log(`🚀 Serveur en ligne sur le port ${PORT}`);
-});
