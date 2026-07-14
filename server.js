@@ -2,6 +2,7 @@ import express from 'express';
 import { WebSocketServer } from 'ws';
 import http from 'http';
 import { sessionManager } from './sessionManager.js';
+import { battleEngine } from './battleEngine.js'; // <-- 1. Importation du moteur de combat indispensable !
 
 const app = express();
 app.use(express.json());
@@ -14,6 +15,8 @@ app.use((req, res, next) => {
 
 const server = http.createServer(app);
 const wss = new WebSocketServer({ server });
+
+// rooms stockera désormais un objet structuré : { clients: [], gameState: { cats: {}, turn: null } }
 const rooms = new Map(); 
 
 // --- ROUTE HTTP : Création de la session ---
@@ -43,8 +46,7 @@ wss.on('connection', (ws) => {
             const data = JSON.parse(message);
 
             switch (data.action) {
-                case 'join_room':
-                    // On force la mise en majuscule du code reçu
+                case 'join_room': {
                     const sessionId = data.sessionId.toUpperCase().trim();
                     const playerId = data.playerId;
                     
@@ -58,103 +60,133 @@ wss.on('connection', (ws) => {
                     currentRoomId = sessionId;
                     currentPlayerId = playerId;
 
+                    // Initialisation de la room avec sa structure complète si elle n'existe pas
                     if (!rooms.has(currentRoomId)) {
-                        rooms.set(currentRoomId, []);
+                        rooms.set(currentRoomId, {
+                            clients: [],
+                            gameState: null
+                        });
                     }
 
-                    const roomClients = rooms.get(currentRoomId);
+                    const room = rooms.get(currentRoomId);
                     
-                    if (roomClients.length >= 2) {
+                    if (room.clients.length >= 2) {
                         ws.send(JSON.stringify({ event: 'error', message: 'Ce salon est déjà complet.' }));
                         return ws.close();
                     }
 
-                    roomClients.push({ ws, playerId });
+                    room.clients.push({ ws, playerId });
                     console.log(`[WS] Joueur ${playerId} a rejoint le salon AmongUs [${currentRoomId}]`);
 
-                    if (roomClients.length === 2) {
+                    if (room.clients.length === 2) {
                         session.status = "connected";
-                        roomClients.forEach(client => {
+                        room.clients.forEach(client => {
                             client.ws.send(JSON.stringify({ 
                                 event: 'room_ready', 
                                 type: session.type,
-                                opponentId: roomClients.find(c => c.playerId !== client.playerId).playerId
+                                opponentId: room.clients.find(c => c.playerId !== client.playerId).playerId
                             }));
                         });
                         sessionManager.deleteSession(currentRoomId);
                     }
                     break;
+                }
 
-                case 'start_battle_state':
-    // Initialise les PV des chats au début du combat sur le serveur
-    if (rooms.has(currentRoomId)) {
-        const room = rooms.get(currentRoomId);
-        if (!room.gameState) room.gameState = { cats: {} };
-        
-        // On enregistre le chat actif du joueur
-        room.gameState.cats[currentPlayerId] = {
-            type: data.cat.type,
-            currentHp: data.cat.hp,
-            maxHp: data.cat.hp
-        };
-        // Le premier joueur à envoyer ses datas ou l'hôte commence
-        if (!room.gameState.turn) room.gameState.turn = currentPlayerId; 
-    }
-    break;
+                case 'start_battle_state': {
+                    if (rooms.has(currentRoomId)) {
+                        const room = rooms.get(currentRoomId);
+                        if (!room.gameState) {
+                            room.gameState = { 
+                                cats: {},
+                                turn: null
+                            };
+                        }
+                        
+                        // Enregistrement du chat actif du joueur
+                        room.gameState.cats[currentPlayerId] = {
+                            type: data.cat.type,
+                            currentHp: data.cat.hp,
+                            maxHp: data.cat.hp
+                        };
 
-case 'execute_attack':
-    if (currentRoomId && rooms.has(currentRoomId)) {
-        const room = rooms.get(currentRoomId);
-        const gameState = room.gameState;
+                        // Le premier joueur qui envoie ses données (ou l'hôte) prend le premier tour
+                        if (!room.gameState.turn) {
+                            room.gameState.turn = currentPlayerId;
+                        } 
+                        console.log(`[BATTLE] Chat enregistré pour ${currentPlayerId} dans le salon [${currentRoomId}]`);
+                    }
+                    break;
+                }
 
-        // Sécurité : Est-ce bien le tour de ce joueur ?
-        if (gameState.turn !== currentPlayerId) {
-            ws.send(JSON.stringify({ event: 'error', message: "Ce n'est pas ton tour !" }));
-            return;
-        }
-
-        const opponentId = room.clients.find(c => c.playerId !== currentPlayerId).playerId;
-        const attackerCat = gameState.cats[currentPlayerId];
-        const targetCat = gameState.cats[opponentId];
-
-        // 1. Récupération des données de l'attaque envoyée par le client
-        const attack = data.attack; // ex: { name: "Griffure", damage: 15 }
-        const qteMultiplier = data.qteMultiplier || 1.0; // Fourni par le client si QTE réussi
-
-        // 2. Calcul via le moteur de combat
-        const finalDamage = battleEngine.calculateFinalDamage(
-            attack, 
-            attackerCat.type, 
-            targetCat.type, 
-            qteMultiplier
-        );
-
-        // 3. Application des dégâts
-        targetCat.currentHp = Math.max(0, targetCat.currentHp - finalDamage);
-
-        // 4. Changement de tour
-        gameState.turn = opponentId;
-
-        // 5. Envoi du résultat du tour aux DEUX joueurs
-        room.clients.forEach(client => {
-            client.ws.send(JSON.stringify({
-                event: 'battle_turn_result',
-                attackerId: currentPlayerId,
-                targetId: opponentId,
-                attackName: attack.name,
-                damageDealt: finalDamage,
-                targetNewHp: targetCat.currentHp,
-                nextTurnPlayerId: gameState.turn,
-                isKo: targetCat.currentHp === 0
-            }));
-        });
-    }
-    break;
-
-                case 'game_action':
+                case 'execute_attack': {
                     if (currentRoomId && rooms.has(currentRoomId)) {
-                        const targets = rooms.get(currentRoomId);
-                        targets.forEach(client => {
+                        const room = rooms.get(currentRoomId);
+                        const gameState = room.gameState;
+
+                        if (!gameState) {
+                            ws.send(JSON.stringify({ event: 'error', message: "Le combat n'est pas encore initialisé." }));
+                            return;
+                        }
+
+                        // Sécurité : Est-ce bien le tour de ce joueur ?
+                        if (gameState.turn !== currentPlayerId) {
+                            ws.send(JSON.stringify({ event: 'error', message: "Ce n'est pas ton tour !" }));
+                            return;
+                        }
+
+                        const opponentClient = room.clients.find(c => c.playerId !== currentPlayerId);
+                        if (!opponentClient) {
+                            ws.send(JSON.stringify({ event: 'error', message: "Adversaire introuvable." }));
+                            return;
+                        }
+
+                        const opponentId = opponentClient.playerId;
+                        const attackerCat = gameState.cats[currentPlayerId];
+                        const targetCat = gameState.cats[opponentId];
+
+                        if (!attackerCat || !targetCat) {
+                            ws.send(JSON.stringify({ event: 'error', message: "Données des combattants incomplètes." }));
+                            return;
+                        }
+
+                        const attack = data.attack; // ex: { name: "Griffure", damage: 15 }
+                        const qteMultiplier = data.qteMultiplier || 1.0; 
+
+                        // Calcul des dégâts via notre moteur importé
+                        const finalDamage = battleEngine.calculateFinalDamage(
+                            attack, 
+                            attackerCat.type, 
+                            targetCat.type, 
+                            qteMultiplier
+                        );
+
+                        // Application des dégâts
+                        targetCat.currentHp = Math.max(0, targetCat.currentHp - finalDamage);
+
+                        // Changement de tour
+                        gameState.turn = opponentId;
+
+                        // Notification aux deux joueurs
+                        room.clients.forEach(client => {
+                            client.ws.send(JSON.stringify({
+                                event: 'battle_turn_result',
+                                attackerId: currentPlayerId,
+                                targetId: opponentId,
+                                attackName: attack.name,
+                                damageDealt: finalDamage,
+                                targetNewHp: targetCat.currentHp,
+                                nextTurnPlayerId: gameState.turn,
+                                isKo: targetCat.currentHp === 0
+                            }));
+                        });
+                    }
+                    break;
+                }
+
+                case 'game_action': {
+                    if (currentRoomId && rooms.has(currentRoomId)) {
+                        const room = rooms.get(currentRoomId);
+                        room.clients.forEach(client => {
                             if (client.playerId !== currentPlayerId) {
                                 client.ws.send(JSON.stringify({
                                     event: 'opponent_action',
@@ -164,6 +196,7 @@ case 'execute_attack':
                         });
                     }
                     break;
+                }
             }
         } catch (err) {
             console.error("Erreur JSON:", err);
@@ -172,11 +205,13 @@ case 'execute_attack':
 
     ws.on('close', () => {
         if (currentRoomId && rooms.has(currentRoomId)) {
-            const remainingClients = rooms.get(currentRoomId).filter(client => client.ws !== ws);
+            const room = rooms.get(currentRoomId);
+            const remainingClients = room.clients.filter(client => client.ws !== ws);
+            
             if (remainingClients.length === 0) {
                 rooms.delete(currentRoomId);
             } else {
-                rooms.set(currentRoomId, remainingClients);
+                room.clients = remainingClients;
                 remainingClients.forEach(client => {
                     client.ws.send(JSON.stringify({ event: 'opponent_disconnected' }));
                 });
