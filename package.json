@@ -1,6 +1,7 @@
 {
   "name": "cat-odex-backend",
   "version": "1.0.0",
+  "type": "module",
   "description": "Serveur d'échange et de combat pour Cat O'Dex",
   "main": "server.js",
   "scripts": {
