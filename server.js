@@ -1,10 +1,55 @@
-ws.on('message', (message) => {
+import express from 'express';
+import { WebSocketServer } from 'ws';
+import http from 'http';
+import { sessionManager } from './sessionManager.js';
+import { battleEngine } from './battleEngine.js';
+
+const app = express();
+app.use(express.json());
+app.use(express.static('public'));
+
+app.use((req, res, next) => {
+    res.header("Access-Control-Allow-Origin", "*");
+    res.header("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept");
+    next();
+});
+
+app.get('/', (req, res) => {
+    res.send("🚀 Cat O'Dex WebServices est en ligne et réveillé !");
+});
+
+const server = http.createServer(app);
+const wss = new WebSocketServer({ server });
+const rooms = new Map(); 
+
+// --- ROUTE HTTP : Création de la session ---
+app.post('/api/session/create', (req, res) => {
+    const { type, playerId } = req.body;
+    
+    if (!type || !playerId) {
+        return res.status(400).json({ error: "Paramètres manquants." });
+    }
+
+    const session = sessionManager.createSession(type, playerId);
+    
+    res.status(201).json({
+        sessionId: session.id,
+        type: session.type,
+        expiresAt: session.createdAt + (5 * 60 * 1000)
+    });
+});
+
+// --- PASSERELLE WEBSOCKET ---
+wss.on('connection', (ws) => {
+    let currentRoomId = null;
+    let currentPlayerId = null;
+
+    // L'écouteur de messages est bien imbriqué à l'intérieur, là où 'ws' existe !
+    ws.on('message', (message) => {
         try {
-            // 1. On convertit le message brut en texte
             const rawText = message.toString();
             console.log(`\n📬 [WS REÇU] Brut de ${currentPlayerId || 'Inconnu'}:`, rawText);
 
-            // 2. On parse le JSON UNE SEULE FOIS (sans duplication de 'const')
             const data = JSON.parse(rawText);
 
             switch (data.action) {
@@ -189,3 +234,26 @@ ws.on('message', (message) => {
             console.error("Erreur JSON:", err);
         }
     });
+
+    ws.on('close', () => {
+        if (currentRoomId && rooms.has(currentRoomId)) {
+            const room = rooms.get(currentRoomId);
+            const remainingClients = room.clients.filter(client => client.ws !== ws);
+            
+            if (remainingClients.length === 0) {
+                rooms.delete(currentRoomId);
+            } else {
+                room.clients = remainingClients;
+                remainingClients.forEach(client => {
+                    client.ws.send(JSON.stringify({ event: 'opponent_disconnected' }));
+                });
+            }
+            console.log(`[WS] Déconnexion du salon [${currentRoomId}]`);
+        }
+    });
+});
+
+const PORT = process.env.PORT || 3000;
+server.listen(PORT, () => {
+    console.log(`🚀 Serveur en ligne sur le port ${PORT}`);
+});
