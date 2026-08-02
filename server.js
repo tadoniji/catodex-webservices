@@ -58,8 +58,9 @@ wss.on('connection', (ws) => {
                     const playerId = data.playerId;
                     
                     const session = sessionManager.getSession(sessionId);
+                    const existingRoom = rooms.get(sessionId);
 
-                    if (!session) {
+                    if (!session && !existingRoom) {
                         ws.send(JSON.stringify({ event: 'error', message: 'Code invalide ou session expirée.' }));
                         return ws.close();
                     }
@@ -76,24 +77,28 @@ wss.on('connection', (ws) => {
 
                     const room = rooms.get(currentRoomId);
                     
-                    if (room.clients.length >= 2) {
+                    const existingClientIndex = room.clients.findIndex(c => c.playerId === playerId);
+                    if (existingClientIndex !== -1) {
+                        room.clients[existingClientIndex].ws = ws;
+                        console.log(`[WS] Joueur ${playerId} s'est reconnecté au salon [${currentRoomId}]`);
+                    } else if (room.clients.length >= 2) {
                         ws.send(JSON.stringify({ event: 'error', message: 'Ce salon est déjà complet.' }));
                         return ws.close();
+                    } else {
+                        room.clients.push({ ws, playerId });
+                        console.log(`[WS] Joueur ${playerId} a rejoint le salon [${currentRoomId}]`);
                     }
 
-                    room.clients.push({ ws, playerId });
-                    console.log(`[WS] Joueur ${playerId} a rejoint le salon [${currentRoomId}]`);
-
                     if (room.clients.length === 2) {
-                        session.status = "connected";
+                        if (session) session.status = "connected";
+                        const sessionType = session ? session.type : "duel";
                         room.clients.forEach(client => {
                             client.ws.send(JSON.stringify({ 
                                 event: 'room_ready', 
-                                type: session.type,
+                                type: sessionType,
                                 opponentId: room.clients.find(c => c.playerId !== client.playerId).playerId
                             }));
                         });
-                        sessionManager.deleteSession(currentRoomId);
                     }
                     break;
                 }
