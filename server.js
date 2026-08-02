@@ -264,6 +264,9 @@ wss.on('connection', (ws) => {
                                     const base64 = line.split('catcher_duel_action:')[1];
                                     const jsonStr = Buffer.from(base64, 'base64').toString('utf8');
                                     const actionInfo = JSON.parse(jsonStr);
+                                    if (!actionInfo.senderId) {
+                                        actionInfo.senderId = currentPlayerId;
+                                    }
 
                                     if (actionInfo.actionType === 'ATTACK' && room.gameState) {
                                         const opponentClient = room.clients.find(c => c.ws !== ws);
