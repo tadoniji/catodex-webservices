@@ -226,18 +226,31 @@ wss.on('connection', (ws) => {
                         const room = rooms.get(currentRoomId);
                         let payload = data.payload;
 
+                        if (!room.gameState) room.gameState = {};
+                        if (!room.gameState.cats) room.gameState.cats = {};
+                        if (!room.gameState.activeIndices) room.gameState.activeIndices = {};
+
+                        if (payload && payload.type === 'opponent_team_sync' && payload.cat) {
+                            const c = payload.cat;
+                            room.gameState.cats[currentPlayerId] = [{
+                                name: c.name,
+                                type: c.type,
+                                hp: c.hp,
+                                maxHp: c.maxHp || c.hp,
+                                moves: c.moves || []
+                            }];
+                            room.gameState.activeIndices[currentPlayerId] = 0;
+                            console.log(`[BATTLE SERVER] Équipe enregistrée via opponent_team_sync pour ${currentPlayerId}`);
+                        }
+
                         if (payload && payload.type === 'duel_line' && payload.line) {
                             const line = payload.line;
 
-                            // 1. Enregistrement de l'équipe des joueurs
                             if (line.startsWith('catcher_duel_team:')) {
                                 try {
                                     const base64 = line.split('catcher_duel_team:')[1];
                                     const jsonStr = Buffer.from(base64, 'base64').toString('utf8');
                                     const team = JSON.parse(jsonStr);
-                                    if (!room.gameState) {
-                                        room.gameState = { cats: {}, activeIndices: {} };
-                                    }
                                     room.gameState.cats[currentPlayerId] = team;
                                     room.gameState.activeIndices[currentPlayerId] = 0;
                                     console.log(`[BATTLE SERVER] Équipe enregistrée pour ${currentPlayerId} (${team.length} chats)`);
@@ -246,7 +259,6 @@ wss.on('connection', (ws) => {
                                 }
                             }
 
-                            // 2. Calcul autoritaire des attaques via battleEngine
                             if (line.startsWith('catcher_duel_action:')) {
                                 try {
                                     const base64 = line.split('catcher_duel_action:')[1];
