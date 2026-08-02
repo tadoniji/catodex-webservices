@@ -53,7 +53,8 @@
                 <strong style="color: #ef4444;">Pyromiaou</strong>
                 <div class="hp-bar"><div id="hp-fill-0" class="hp-fill"></div></div>
                 <small id="hp-text-0">120 / 120 PV</small>
-                <div class="attacks" style="margin-top: 10px;">
+                <button class="switch-btn" id="switch-0" onclick="window.switchCat(0)" style="background: #eab308; color: #000; font-size: 11px; padding: 4px; margin-top: 6px; width: 100%; border-radius: 4px; font-weight: bold; cursor: pointer;">🔄 Envoyer au combat</button>
+                <div class="attacks" style="margin-top: 6px;">
                     <button class="attack-btn" id="btn-0-0" onclick="window.sendAttack('Flammèche', 20)">Flammèche (20)</button>
                     <button class="attack-btn" id="btn-0-1" onclick="window.sendAttack('Lance-flamme', 35)">Lance-flamme (35)</button>
                     <button class="attack-btn" id="btn-0-2" onclick="window.sendAttack('Griffe Ardente', 15)">Griffe Ardent (15)</button>
@@ -65,7 +66,8 @@
                 <strong style="color: #22c55e;">Feuillou</strong>
                 <div class="hp-bar"><div id="hp-fill-1" class="hp-fill"></div></div>
                 <small id="hp-text-1">100 / 100 PV</small>
-                <div class="attacks" style="margin-top: 10px;">
+                <button class="switch-btn" id="switch-1" onclick="window.switchCat(1)" style="background: #eab308; color: #000; font-size: 11px; padding: 4px; margin-top: 6px; width: 100%; border-radius: 4px; font-weight: bold; cursor: pointer;">🔄 Envoyer au combat</button>
+                <div class="attacks" style="margin-top: 6px;">
                     <button class="attack-btn" id="btn-1-0" onclick="window.sendAttack('Fouet Lianes', 18)">Fouet Lianes (18)</button>
                     <button class="attack-btn" id="btn-1-1" onclick="window.sendAttack('Giga-Sangsue', 30)">Giga-Sangsue (30)</button>
                     <button class="attack-btn" id="btn-1-2" onclick="window.sendAttack('Tranch\'Herbe', 25)">Tranch'Herbe (25)</button>
@@ -77,7 +79,8 @@
                 <strong style="color: #eab308;">Volt</strong>
                 <div class="hp-bar"><div id="hp-fill-2" class="hp-fill"></div></div>
                 <small id="hp-text-2">90 / 90 PV</small>
-                <div class="attacks" style="margin-top: 10px;">
+                <button class="switch-btn" id="switch-2" onclick="window.switchCat(2)" style="background: #eab308; color: #000; font-size: 11px; padding: 4px; margin-top: 6px; width: 100%; border-radius: 4px; font-weight: bold; cursor: pointer;">🔄 Envoyer au combat</button>
+                <div class="attacks" style="margin-top: 6px;">
                     <button class="attack-btn" id="btn-2-0" onclick="window.sendAttack('Éclair', 15)">Éclair (15)</button>
                     <button class="attack-btn" id="btn-2-1" onclick="window.sendAttack('Tonnerre', 40)">Tonnerre (40)</button>
                     <button class="attack-btn" id="btn-2-2" onclick="window.sendAttack('Cage-Éclair', 5)">Cage-Éclair (5)</button>
@@ -263,10 +266,37 @@
                 action: "game_action",
                 payload: {
                     type: "opponent_team_sync",
-                    cat: team[activeCatIndex]
+                    cat: team[activeCatIndex],
+                    team: team
                 }
             }));
         }
+
+        window.switchCat = function(newIndex) {
+            if (newIndex === activeCatIndex || team[newIndex].hp <= 0 || !myTurn) return;
+            
+            activeCatIndex = newIndex;
+            updateActiveCatVisual();
+            log(`🔄 Vous envoyez <strong>${team[activeCatIndex].name}</strong> au combat !`);
+
+            const actionInfo = {
+                actionType: "SWITCH",
+                switchIndex: newIndex,
+                senderId: myId
+            };
+            const jsonStr = JSON.stringify(actionInfo);
+            const base64 = btoa(jsonStr);
+
+            ws.send(JSON.stringify({
+                action: "game_action",
+                payload: {
+                    type: "duel_line",
+                    line: `catcher_duel_action:${base64}`
+                }
+            }));
+
+            setTurn(false);
+        };
 
         window.sendAttack = function(name, damage) {
             if (!myTurn) return;
@@ -317,6 +347,13 @@
                 const isCurrentCatBtn = b.id.startsWith(`btn-${activeCatIndex}-`);
                 b.disabled = !(enable && isCurrentCatBtn);
             });
+
+            for (let i = 0; i < 3; i++) {
+                const swBtn = document.getElementById(`switch-${i}`);
+                if (swBtn) {
+                    swBtn.disabled = (i === activeCatIndex || team[i].hp <= 0 || !myTurn);
+                }
+            }
         }
 
         toggleAttackButtons(false);
