@@ -40,7 +40,12 @@
     <div id="battleArena" class="box" style="display: none;">
         <div style="display: flex; justify-content: space-between; align-items: center;">
             <h3>2. Terrain de Combat (Équipe de 3)</h3>
-            <span id="turnIndicator" class="badge" style="background: #ef4444;">Tour adverse</span>
+            <div style="display: flex; align-items: center; gap: 15px;">
+                <label style="font-size: 13px; cursor: pointer; color: #a7f3d0;">
+                    <input type="checkbox" id="autoBotCheck" checked> Bot Auto (Réponse auto 1.5s)
+                </label>
+                <span id="turnIndicator" class="badge" style="background: #ef4444;">TOUR ADVERSE</span>
+            </div>
         </div>
 
         <div class="grid-cats">
@@ -156,41 +161,64 @@
                 if (data.event === "room_ready") {
                     document.getElementById('connectionStatus').innerText = "Statut : Connecté au téléphone !";
                     document.getElementById('battleArena').style.display = "block";
-                    log("Abonnement réussi ! Envoi de la structure d'équipe au serveur d'arbitrage...");
+                    log("Abonnement réussi ! Envoi de l'équipe au serveur d'arbitrage...");
                     
                     updateActiveCatVisual();
                     sendStartBattleState();
                 }
 
-                if (data.event === "battle_turn_result") {
-                    log(`💥 <strong>${data.attackerId === myId ? 'Vous' : 'Téléphone'}</strong> utilise [${data.attackName}] (-${data.damageDealt} PV)`);
-                    
-                    if (data.targetId === myId) {
-                        team[activeCatIndex].hp = data.targetNewHp;
-                        updateHpBar(activeCatIndex);
-                        
-                        if (data.isKo) {
-                            log(`💀 <strong>${team[activeCatIndex].name}</strong> est K.O. !`);
-                            document.getElementById(`cat-${activeCatIndex}`).classList.add('ko');
-                            
-                            const nextIndex = team.findIndex(c => c.hp > 0);
-                            if (nextIndex !== -1) {
-                                activeCatIndex = nextIndex;
-                                log(`🔄 Envoi de <strong>${team[activeCatIndex].name}</strong> sur le terrain !`);
-                                updateActiveCatVisual();
-                                sendStartBattleState(); 
-                            } else {
-                                log("😭 Tous vos chats sont K.O. Fin du combat !");
+                if (data.event === "opponent_action" && data.payload) {
+                    const payload = data.payload;
+                    if (payload.type === "duel_line" && payload.line) {
+                        const line = payload.line;
+                        if (line.startsWith("catcher_duel_action:")) {
+                            try {
+                                const base64 = line.split("catcher_duel_action:")[1];
+                                const jsonStr = atob(base64);
+                                const action = JSON.parse(jsonStr);
+
+                                if (action.actionType === "ATTACK") {
+                                    const isMyAttack = (action.senderId === myId);
+                                    if (!isMyAttack) {
+                                        const appliedDamage = action.damage;
+                                        if (action.targetNewHp !== undefined) {
+                                            team[activeCatIndex].hp = Math.max(0, action.targetNewHp);
+                                        } else {
+                                            team[activeCatIndex].hp = Math.max(0, team[activeCatIndex].hp - appliedDamage);
+                                        }
+                                        updateHpBar(activeCatIndex);
+
+                                        log(`💥 <strong>Téléphone</strong> utilise [${action.moveName || 'Attaque'}] (-${appliedDamage} PV) !`);
+
+                                        if (team[activeCatIndex].hp <= 0) {
+                                            log(`💀 <strong>${team[activeCatIndex].name}</strong> est K.O. !`);
+                                            document.getElementById(`cat-${activeCatIndex}`).classList.add('ko');
+                                            
+                                            const nextIndex = team.findIndex(c => c.hp > 0);
+                                            if (nextIndex !== -1) {
+                                                activeCatIndex = nextIndex;
+                                                log(`🔄 Passage sur <strong>${team[activeCatIndex].name}</strong> !`);
+                                                updateActiveCatVisual();
+                                            } else {
+                                                log("😭 Tous vos chats sont K.O. Fin du combat !");
+                                            }
+                                        }
+
+                                        setTurn(true);
+                                    } else {
+                                        log(`💥 <strong>Vous</strong> utilisez [${action.moveName}] (-${action.damage} PV chez l'adversaire) !`);
+                                        setTurn(false);
+                                    }
+                                } else if (action.actionType === "SWITCH") {
+                                    if (action.senderId !== myId) {
+                                        log(`🔄 Le téléphone a changé de félin !`);
+                                    }
+                                }
+                            } catch (e) {
+                                console.error("[SIMULATEUR] Erreur parsing action:", e);
                             }
                         }
                     }
-
-                    myTurn = (data.nextTurnPlayerId === myId);
-                    const indicator = document.getElementById('turnIndicator');
-                    indicator.innerText = myTurn ? "À VOUS DE JOUER" : "TOUR ADVERSE";
-                    indicator.style.background = myTurn ? "#22c55e" : "#ef4444";
-                    
-                    toggleAttackButtons(myTurn && team[activeCatIndex].hp > 0);
                 }
 
                 if (data.event === "opponent_disconnected") {
@@ -205,6 +233,25 @@
             };
         };
 
+        function setTurn(isMyTurn) {
+            myTurn = isMyTurn;
+            const indicator = document.getElementById('turnIndicator');
+            indicator.innerText = myTurn ? "À VOUS DE JOUER" : "TOUR ADVERSE";
+            indicator.style.background = myTurn ? "#22c55e" : "#ef4444";
+            
+            toggleAttackButtons(myTurn && team[activeCatIndex].hp > 0);
+
+            if (myTurn && document.getElementById('autoBotCheck')?.checked && team[activeCatIndex].hp > 0) {
+                setTimeout(() => {
+                    if (myTurn) {
+                        const moves = team[activeCatIndex].moves;
+                        const chosenMove = moves[Math.floor(Math.random() * moves.length)];
+                        window.sendAttack(chosenMove.name, chosenMove.damage);
+                    }
+                }, 1500);
+            }
+        }
+
         function sendStartBattleState() {
             ws.send(JSON.stringify({
                 action: "start_battle_state",
@@ -212,7 +259,6 @@
                 totalFighters: team.length
             }));
 
-            // Envoi de la synchronisation de l'objet complet de l'adversaire (avec 4 attaques) via game_action
             ws.send(JSON.stringify({
                 action: "game_action",
                 payload: {
@@ -224,11 +270,27 @@
 
         window.sendAttack = function(name, damage) {
             if (!myTurn) return;
+            
+            const actionInfo = {
+                actionType: "ATTACK",
+                moveName: name,
+                rawDamage: damage,
+                attackerType: team[activeCatIndex].type,
+                qteMultiplier: 1.0,
+                senderId: myId
+            };
+            const jsonStr = JSON.stringify(actionInfo);
+            const base64 = btoa(jsonStr);
+
             ws.send(JSON.stringify({
-                action: "execute_attack",
-                attack: { name: name, damage: damage },
-                qteMultiplier: 1.0 
+                action: "game_action",
+                payload: {
+                    type: "duel_line",
+                    line: `catcher_duel_action:${base64}`
+                }
             }));
+
+            setTurn(false);
         };
 
         function updateActiveCatVisual() {
@@ -252,7 +314,6 @@
         function toggleAttackButtons(enable) {
             const btns = document.querySelectorAll('.attack-btn');
             btns.forEach(b => {
-                // On active uniquement les boutons du chat en cours
                 const isCurrentCatBtn = b.id.startsWith(`btn-${activeCatIndex}-`);
                 b.disabled = !(enable && isCurrentCatBtn);
             });
