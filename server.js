@@ -93,10 +93,11 @@ wss.on('connection', (ws) => {
                         if (session) session.status = "connected";
                         const sessionType = session ? session.type : "duel";
                         room.clients.forEach(client => {
+                            const opponent = room.clients.find(c => c.ws !== client.ws);
                             client.ws.send(JSON.stringify({ 
                                 event: 'room_ready', 
                                 type: sessionType,
-                                opponentId: room.clients.find(c => c.playerId !== client.playerId).playerId
+                                opponentId: opponent ? opponent.playerId : 'opponent'
                             }));
                         });
                     }
@@ -223,14 +224,97 @@ wss.on('connection', (ws) => {
                 case 'game_action': {
                     if (currentRoomId && rooms.has(currentRoomId)) {
                         const room = rooms.get(currentRoomId);
+                        let payload = data.payload;
+
+                        if (payload && payload.type === 'duel_line' && payload.line) {
+                            const line = payload.line;
+
+                            // 1. Enregistrement de l'équipe des joueurs
+                            if (line.startsWith('catcher_duel_team:')) {
+                                try {
+                                    const base64 = line.split('catcher_duel_team:')[1];
+                                    const jsonStr = Buffer.from(base64, 'base64').toString('utf8');
+                                    const team = JSON.parse(jsonStr);
+                                    if (!room.gameState) {
+                                        room.gameState = { cats: {}, activeIndices: {} };
+                                    }
+                                    room.gameState.cats[currentPlayerId] = team;
+                                    room.gameState.activeIndices[currentPlayerId] = 0;
+                                    console.log(`[BATTLE SERVER] Équipe enregistrée pour ${currentPlayerId} (${team.length} chats)`);
+                                } catch (e) {
+                                    console.error("[BATTLE SERVER] Erreur parsing équipe:", e);
+                                }
+                            }
+
+                            // 2. Calcul autoritaire des attaques via battleEngine
+                            if (line.startsWith('catcher_duel_action:')) {
+                                try {
+                                    const base64 = line.split('catcher_duel_action:')[1];
+                                    const jsonStr = Buffer.from(base64, 'base64').toString('utf8');
+                                    const actionInfo = JSON.parse(jsonStr);
+
+                                    if (actionInfo.actionType === 'ATTACK' && room.gameState) {
+                                        const opponentClient = room.clients.find(c => c.ws !== ws);
+                                        const opponentId = opponentClient ? opponentClient.playerId : null;
+                                        
+                                        const attackerCats = room.gameState.cats[currentPlayerId];
+                                        const targetCats = opponentId ? room.gameState.cats[opponentId] : null;
+                                        const targetIndex = opponentId ? (room.gameState.activeIndices[opponentId] || 0) : 0;
+
+                                        if (attackerCats && targetCats && targetCats[targetIndex]) {
+                                            const targetCat = targetCats[targetIndex];
+                                            const rawDamage = actionInfo.rawDamage || actionInfo.damage || 20;
+                                            const attackerType = actionInfo.attackerType || attackerCats[0]?.type || 'URBAIN';
+                                            const qteMult = actionInfo.qteMultiplier || 1.0;
+
+                                            const finalDamage = battleEngine.calculateFinalDamage(
+                                                { name: actionInfo.moveName || "Attaque", damage: rawDamage },
+                                                attackerType,
+                                                targetCat.type,
+                                                qteMult
+                                            );
+
+                                            targetCat.hp = Math.max(0, targetCat.hp - finalDamage);
+                                            actionInfo.damage = finalDamage;
+                                            actionInfo.targetNewHp = targetCat.hp;
+
+                                            console.log(`[BATTLE SERVER] Attaque autoritaire: ${actionInfo.moveName} -> ${finalDamage} dégâts subis par ${targetCat.name} (PV restants: ${targetCat.hp})`);
+
+                                            const updatedJson = JSON.stringify(actionInfo);
+                                            const updatedBase64 = Buffer.from(updatedJson, 'utf8').toString('base64');
+                                            payload = {
+                                                type: 'duel_line',
+                                                line: `catcher_duel_action:${updatedBase64}`
+                                            };
+                                        }
+                                    } else if (actionInfo.actionType === 'SWITCH' && room.gameState) {
+                                        if (!room.gameState.activeIndices) room.gameState.activeIndices = {};
+                                        room.gameState.activeIndices[currentPlayerId] = actionInfo.switchIndex || 0;
+                                        console.log(`[BATTLE SERVER] Changement de chat pour ${currentPlayerId} -> index ${actionInfo.switchIndex}`);
+                                    }
+                                } catch (e) {
+                                    console.error("[BATTLE SERVER] Erreur calcul autoritaire action:", e);
+                                }
+                            }
+                        }
+
+                        // Relayer l'action à l'adversaire
                         room.clients.forEach(client => {
-                            if (client.playerId !== currentPlayerId) {
+                            if (client.ws !== ws) {
                                 client.ws.send(JSON.stringify({
                                     event: 'opponent_action',
-                                    payload: data.payload 
+                                    payload: payload 
                                 }));
                             }
                         });
+
+                        // Renvoyer la réponse autoritaire également à l'attaquant pour synchro immédiate
+                        if (payload && payload.line && payload.line.startsWith('catcher_duel_action:')) {
+                            ws.send(JSON.stringify({
+                                event: 'opponent_action',
+                                payload: payload
+                            }));
+                        }
                     }
                     break;
                 }
