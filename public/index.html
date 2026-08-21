@@ -213,8 +213,12 @@
                                         setTurn(false);
                                     }
                                 } else if (action.actionType === "SWITCH") {
-                                    if (action.senderId !== myId) {
+                                    const isMySwitch = (action.senderId === myId);
+                                    if (!isMySwitch) {
                                         log(`🔄 Le téléphone a changé de félin !`);
+                                        setTurn(true);
+                                    } else {
+                                        setTurn(false);
                                     }
                                 }
                             } catch (e) {

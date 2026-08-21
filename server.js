@@ -39,6 +39,63 @@ app.post('/api/session/create', (req, res) => {
     });
 });
 
+// --- STOCKAGE ET GESTION DES CHATS PARTAGÉS HD ---
+const sharedCats = new Map();
+
+// 1. Envoi du chat partagé depuis l'application
+app.post('/share/cat/upload', (req, res) => {
+    const { shareId, catData } = req.body;
+    if (!shareId || !catData) {
+        return res.status(400).json({ error: 'Données manquantes.' });
+    }
+    sharedCats.set(shareId, {
+        catData,
+        createdAt: Date.now()
+    });
+    console.log(`[SHARE] Chat partagé enregistré sous l'ID : ${shareId}`);
+    return res.json({ success: true, shareId });
+});
+
+// 2. Récupération des données JSON du chat partagé pour l'application CatCher
+app.get('/share/cat/data/:shareId', (req, res) => {
+    const entry = sharedCats.get(req.params.shareId);
+    if (!entry) {
+        return res.status(404).json({ error: 'Chat partagé introuvable ou expiré.' });
+    }
+    return res.json(entry.catData);
+});
+
+// 3. Affichage Web de secours (Navigateur PC / Aperçu WhatsApp)
+app.get('/share/cat', (req, res) => {
+    const shareId = req.query.id || '';
+    res.send(`
+        <!DOCTYPE html>
+        <html lang="fr">
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>CatCher - Félin Partagé 🐱</title>
+            <meta property="og:title" content="Découvre ce félin HD sur CatCher !" />
+            <meta property="og:description" content="Clique pour ajouter ce chat partagé directement dans ton album Cat-Log !" />
+            <style>
+                body { font-family: system-ui, sans-serif; background: #0F172A; color: white; text-align: center; padding: 40px; }
+                .card { background: #1E293B; border-radius: 16px; padding: 24px; max-width: 400px; margin: 0 auto; box-shadow: 0 10px 25px rgba(0,0,0,0.5); }
+                .btn { display: inline-block; background: #6366F1; color: white; padding: 14px 28px; border-radius: 12px; text-decoration: none; font-weight: bold; margin-top: 20px; }
+                code { background: #334155; padding: 4px 8px; border-radius: 6px; font-family: monospace; color: #38BDF8; }
+            </style>
+        </head>
+        <body>
+            <div class="card">
+                <h1>🐱 CatCher - Félin Partagé</h1>
+                <p>Code du chat : <code>${shareId}</code></p>
+                <p>Ouvre ce lien sur ton téléphone avec l'application <strong>CatCher</strong> installée pour ajouter ce chat à ton Cat-Log !</p>
+                <a href="catcher://share/cat?id=${shareId}" class="btn">📱 Ouvrir dans CatCher</a>
+            </div>
+        </body>
+        </html>
+    `);
+});
+
 // --- PASSERELLE WEBSOCKET ---
 wss.on('connection', (ws) => {
     let currentRoomId = null;
@@ -294,19 +351,19 @@ wss.on('connection', (ws) => {
                                             actionInfo.targetNewHp = targetCat.hp;
 
                                             console.log(`[BATTLE SERVER] Attaque autoritaire: ${actionInfo.moveName} -> ${finalDamage} dégâts subis par ${targetCat.name} (PV restants: ${targetCat.hp})`);
-
-                                            const updatedJson = JSON.stringify(actionInfo);
-                                            const updatedBase64 = Buffer.from(updatedJson, 'utf8').toString('base64');
-                                            payload = {
-                                                type: 'duel_line',
-                                                line: `catcher_duel_action:${updatedBase64}`
-                                            };
                                         }
                                     } else if (actionInfo.actionType === 'SWITCH' && room.gameState) {
                                         if (!room.gameState.activeIndices) room.gameState.activeIndices = {};
                                         room.gameState.activeIndices[currentPlayerId] = actionInfo.switchIndex || 0;
                                         console.log(`[BATTLE SERVER] Changement de chat pour ${currentPlayerId} -> index ${actionInfo.switchIndex}`);
                                     }
+
+                                    const updatedJson = JSON.stringify(actionInfo);
+                                    const updatedBase64 = Buffer.from(updatedJson, 'utf8').toString('base64');
+                                    payload = {
+                                        type: 'duel_line',
+                                        line: `catcher_duel_action:${updatedBase64}`
+                                    };
                                 } catch (e) {
                                     console.error("[BATTLE SERVER] Erreur calcul autoritaire action:", e);
                                 }
