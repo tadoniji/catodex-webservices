@@ -3,9 +3,11 @@ import { WebSocketServer } from 'ws';
 import http from 'http';
 import { sessionManager } from './sessionManager.js';
 import { battleEngine } from './battleEngine.js';
+import { missingCatsManager } from './missingCatsManager.js';
 
 const app = express();
-app.use(express.json());
+app.use(express.json({ limit: '20mb' }));
+app.use(express.urlencoded({ extended: true, limit: '20mb' }));
 app.use(express.static('public'));
 
 app.use((req, res, next) => {
@@ -94,6 +96,70 @@ app.get('/share/cat', (req, res) => {
         </body>
         </html>
     `);
+});
+
+// 4. Redirection vers le panel des avis de recherche
+app.get('/avis-recherche', (req, res) => {
+    res.redirect('/admin-alerts.html');
+});
+
+// --- API AVIS DE RECHERCHE DE CHATS DISPARUS ---
+// 1. Récupération des avis de recherche (filtrés par zone si lat & lon fournis)
+app.get('/api/missing-cats', (req, res) => {
+    const { lat, lon, all } = req.query;
+    if (all === 'true') {
+        return res.json(missingCatsManager.getAllAlerts());
+    }
+    if (lat !== undefined && lon !== undefined) {
+        const inZone = missingCatsManager.getAlertsInZone(lat, lon);
+        return res.json(inZone);
+    }
+    return res.json(missingCatsManager.getActiveAlerts());
+});
+
+// 2. Publication d'un avis de recherche félin
+app.post('/api/missing-cats', (req, res) => {
+    const { name, ownerName, contact, description, photo, latitude, longitude, radiusKm } = req.body;
+    if (!name || !contact || latitude === undefined || longitude === undefined) {
+        return res.status(400).json({ error: "Champs obligatoires manquants : nom, contact, latitude, longitude." });
+    }
+
+    try {
+        const alert = missingCatsManager.createAlert({
+            name,
+            ownerName,
+            contact,
+            description,
+            photo,
+            latitude,
+            longitude,
+            radiusKm
+        });
+        return res.status(201).json({ success: true, alert });
+    } catch (err) {
+        console.error("Erreur création avis de recherche:", err);
+        return res.status(500).json({ error: "Erreur lors de la création de l'avis." });
+    }
+});
+
+// 3. Marquer un chat comme retrouvé
+app.post('/api/missing-cats/:id/found', (req, res) => {
+    const { id } = req.params;
+    const alert = missingCatsManager.markAsFound(id);
+    if (!alert) {
+        return res.status(404).json({ error: "Avis de recherche introuvable." });
+    }
+    return res.json({ success: true, message: `Chat ${alert.name} marqué comme retrouvé !`, alert });
+});
+
+// 4. Clôturer / Supprimer un avis
+app.delete('/api/missing-cats/:id', (req, res) => {
+    const { id } = req.params;
+    const deleted = missingCatsManager.deleteAlert(id);
+    if (!deleted) {
+        return res.status(404).json({ error: "Avis de recherche introuvable." });
+    }
+    return res.json({ success: true, message: "Avis supprimé." });
 });
 
 // --- PASSERELLE WEBSOCKET ---

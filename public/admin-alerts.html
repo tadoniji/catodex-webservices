@@ -1,0 +1,823 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CatCher - Panel Avis de Recherche Félins 🚨</title>
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <style>
+        :root {
+            --primary: #f97316;
+            --primary-dark: #ea580c;
+            --bg: #0f172a;
+            --card-bg: #1e293b;
+            --card-border: #334155;
+            --text: #f8fafc;
+            --text-muted: #94a3b8;
+            --success: #10b981;
+            --danger: #ef4444;
+            --accent: #8b5cf6;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        }
+
+        body {
+            background-color: var(--bg);
+            color: var(--text);
+            padding: 20px;
+            min-height: 100vh;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 15px;
+            margin-bottom: 25px;
+            padding-bottom: 15px;
+            border-bottom: 1px solid var(--card-border);
+        }
+
+        .header-title h1 {
+            font-size: 26px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            color: var(--primary);
+        }
+
+        .header-title p {
+            color: var(--text-muted);
+            font-size: 14px;
+            margin-top: 4px;
+        }
+
+        .nav-links a {
+            background: #252538;
+            color: #fff;
+            text-decoration: none;
+            padding: 8px 16px;
+            border-radius: 8px;
+            font-size: 13px;
+            font-weight: 600;
+            border: 1px solid #444;
+            transition: 0.2s;
+        }
+
+        .nav-links a:hover {
+            background: #3b3b55;
+        }
+
+        .grid-layout {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 24px;
+        }
+
+        @media (max-width: 900px) {
+            .grid-layout {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .card {
+            background: var(--card-bg);
+            border: 1px solid var(--card-border);
+            border-radius: 16px;
+            padding: 24px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.3);
+        }
+
+        .card-header {
+            margin-bottom: 20px;
+        }
+
+        .card-title {
+            font-size: 18px;
+            font-weight: 700;
+            color: #fff;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .card-subtitle {
+            font-size: 13px;
+            color: var(--text-muted);
+            margin-top: 4px;
+        }
+
+        .form-group {
+            margin-bottom: 16px;
+        }
+
+        label {
+            display: block;
+            font-size: 13px;
+            font-weight: 600;
+            margin-bottom: 6px;
+            color: #e2e8f0;
+        }
+
+        label .badge-opt {
+            font-size: 11px;
+            color: var(--text-muted);
+            font-weight: normal;
+        }
+
+        input[type="text"], input[type="tel"], textarea, select {
+            width: 100%;
+            background: #0f172a;
+            border: 1px solid var(--card-border);
+            border-radius: 10px;
+            padding: 11px 14px;
+            color: #fff;
+            font-size: 14px;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+
+        input[type="text"]:focus, input[type="tel"]:focus, textarea:focus {
+            border-color: var(--primary);
+        }
+
+        textarea {
+            resize: vertical;
+            min-height: 80px;
+        }
+
+        /* Photo Uploader */
+        .photo-uploader {
+            border: 2px dashed var(--card-border);
+            border-radius: 12px;
+            padding: 20px;
+            text-align: center;
+            cursor: pointer;
+            position: relative;
+            background: #0f172a;
+            transition: 0.2s;
+        }
+
+        .photo-uploader:hover {
+            border-color: var(--primary);
+        }
+
+        .photo-preview {
+            max-height: 180px;
+            max-width: 100%;
+            border-radius: 8px;
+            display: none;
+            margin: 0 auto;
+            object-fit: cover;
+        }
+
+        .upload-hint {
+            color: var(--text-muted);
+            font-size: 13px;
+        }
+
+        /* Leaflet Map */
+        #map {
+            height: 280px;
+            width: 100%;
+            border-radius: 12px;
+            border: 1px solid var(--card-border);
+            margin-top: 8px;
+        }
+
+        .map-search-row {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 8px;
+        }
+
+        .map-search-row input {
+            flex: 1;
+        }
+
+        .btn-secondary {
+            background: #334155;
+            color: #fff;
+            border: none;
+            border-radius: 8px;
+            padding: 0 14px;
+            font-size: 13px;
+            cursor: pointer;
+            font-weight: 600;
+            white-space: nowrap;
+        }
+
+        .btn-secondary:hover {
+            background: #475569;
+        }
+
+        .radius-control {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-top: 10px;
+        }
+
+        .radius-control input[type="range"] {
+            flex: 1;
+            accent-color: var(--primary);
+            cursor: pointer;
+        }
+
+        .radius-badge {
+            background: var(--primary);
+            color: #fff;
+            padding: 4px 10px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: bold;
+            min-width: 70px;
+            text-align: center;
+        }
+
+        .btn-submit {
+            background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+            color: white;
+            border: none;
+            border-radius: 12px;
+            padding: 14px 20px;
+            font-size: 15px;
+            font-weight: 700;
+            width: 100%;
+            cursor: pointer;
+            margin-top: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            box-shadow: 0 4px 15px rgba(249, 115, 22, 0.4);
+            transition: 0.2s;
+        }
+
+        .btn-submit:hover {
+            opacity: 0.95;
+            transform: translateY(-1px);
+        }
+
+        /* Liste des avis */
+        .alerts-list {
+            display: flex;
+            flex-direction: column;
+            gap: 14px;
+            max-height: 820px;
+            overflow-y: auto;
+            padding-right: 4px;
+        }
+
+        .alert-card {
+            background: #151e2e;
+            border: 1px solid var(--card-border);
+            border-radius: 12px;
+            padding: 16px;
+            display: flex;
+            gap: 14px;
+            position: relative;
+            transition: 0.2s;
+        }
+
+        .alert-card.status-found {
+            border-color: var(--success);
+            background: rgba(16, 185, 129, 0.08);
+        }
+
+        .alert-card.status-expired {
+            opacity: 0.6;
+        }
+
+        .alert-img {
+            width: 85px;
+            height: 85px;
+            border-radius: 10px;
+            object-fit: cover;
+            background: #232d3f;
+            flex-shrink: 0;
+            border: 2px solid var(--card-border);
+        }
+
+        .alert-details {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .alert-name-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 4px;
+        }
+
+        .alert-name {
+            font-size: 17px;
+            font-weight: 700;
+            color: #fff;
+        }
+
+        .badge-status {
+            font-size: 11px;
+            font-weight: 700;
+            padding: 3px 8px;
+            border-radius: 6px;
+            text-transform: uppercase;
+        }
+
+        .badge-active { background: rgba(249, 115, 22, 0.2); color: var(--primary); border: 1px solid var(--primary); }
+        .badge-found { background: rgba(16, 185, 129, 0.2); color: var(--success); border: 1px solid var(--success); }
+        .badge-expired { background: rgba(148, 163, 184, 0.2); color: var(--text-muted); border: 1px solid var(--text-muted); }
+
+        .alert-meta {
+            font-size: 12px;
+            color: var(--text-muted);
+            margin-bottom: 6px;
+            line-height: 1.4;
+        }
+
+        .alert-desc {
+            font-size: 13px;
+            color: #cbd5e1;
+            margin-bottom: 10px;
+            background: rgba(0,0,0,0.2);
+            padding: 6px 10px;
+            border-radius: 6px;
+        }
+
+        .alert-actions {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .btn-action {
+            padding: 6px 12px;
+            border-radius: 6px;
+            font-size: 12px;
+            font-weight: 600;
+            border: none;
+            cursor: pointer;
+            transition: 0.2s;
+        }
+
+        .btn-found {
+            background: var(--success);
+            color: white;
+        }
+
+        .btn-delete {
+            background: #ef4444;
+            color: white;
+        }
+
+        .btn-center {
+            background: #334155;
+            color: #fff;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 40px 20px;
+            color: var(--text-muted);
+        }
+
+        .info-pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            background: rgba(139, 92, 246, 0.15);
+            color: #c4b5fd;
+            border: 1px solid rgba(139, 92, 246, 0.4);
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            margin-bottom: 12px;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <header>
+            <div class="header-title">
+                <h1>🚨 CatCher • Panel Avis de Recherche Félins</h1>
+                <p>Diffusez des alertes localisées pour aider à retrouver les chats perdus dans leur secteur.</p>
+            </div>
+            <div class="nav-links">
+                <a href="/">🎮 Simulateur J2</a>
+                <a href="/avis-recherche" style="border-color: var(--primary); color: var(--primary);">🚨 Avis Félins</a>
+            </div>
+        </header>
+
+        <div class="grid-layout">
+            <!-- Colonne 1 : Formulaire d'émission d'un avis -->
+            <div class="card">
+                <div class="card-header">
+                    <div class="info-pill">
+                        ⏱️ Diffusion automatique : 7 jours max dans la zone délimitée
+                    </div>
+                    <div class="card-title">📢 Publier un Avis de Recherche</div>
+                    <div class="card-subtitle">Remplissez les informations et délimitez la zone où déclencher l'alerte sur l'app.</div>
+                </div>
+
+                <form id="alertForm" onsubmit="event.preventDefault(); submitAlert();">
+                    <div class="form-group">
+                        <label>Photo du chat félin :</label>
+                        <div class="photo-uploader" onclick="document.getElementById('photoInput').click()">
+                            <input type="file" id="photoInput" accept="image/*" style="display:none" onchange="handlePhotoUpload(event)">
+                            <img id="photoPreview" class="photo-preview" alt="Aperçu de la photo">
+                            <div id="uploadHint" class="upload-hint">
+                                📷 Cliquez ou déposez la photo du chat ici (JPG, PNG)
+                            </div>
+                        </div>
+                    </div>
+
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                        <div class="form-group">
+                            <label for="catName">Nom du chat * :</label>
+                            <input type="text" id="catName" placeholder="Ex: Félix, Mallow..." required>
+                        </div>
+                        <div class="form-group">
+                            <label for="ownerName">Propriétaire <span class="badge-opt">(facultatif)</span> :</label>
+                            <input type="text" id="ownerName" placeholder="Ex: Marie Dupont">
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="contactInfo">Infos de contact (Téléphone ou Email) * :</label>
+                        <input type="text" id="contactInfo" placeholder="Ex: 06 12 34 56 78 ou contact@email.com" required>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="catDesc">Description physique & signes distinctifs :</label>
+                        <textarea id="catDesc" placeholder="Ex: Pelage roux tigré, bout de la patte blanche, collier rouge sans grelot, craintif..."></textarea>
+                    </div>
+
+                    <!-- Carte de sélection de zone -->
+                    <div class="form-group">
+                        <label>Zone de recherche (Point central & Rayon) * :</label>
+                        <div class="map-search-row">
+                            <input type="text" id="addressSearch" placeholder="Rechercher une ville, rue..." onkeydown="if(event.key==='Enter'){event.preventDefault(); searchAddress();}">
+                            <button type="button" class="btn-secondary" onclick="searchAddress()">🔍 Chercher</button>
+                            <button type="button" class="btn-secondary" onclick="locateUser()">📍 Ma position</button>
+                        </div>
+                        <div id="map"></div>
+                        <div class="radius-control">
+                            <span style="font-size: 13px; color: var(--text-muted);">Rayon d'action :</span>
+                            <input type="range" id="radiusInput" min="0.5" max="30" step="0.5" value="5" oninput="updateRadius(this.value)">
+                            <span id="radiusBadge" class="radius-badge">5 km</span>
+                        </div>
+                        <input type="hidden" id="latitude" value="48.8566">
+                        <input type="hidden" id="longitude" value="2.3522">
+                    </div>
+
+                    <button type="submit" class="btn-submit" id="submitBtn">
+                        📢 Diffuser l'avis de recherche félin
+                    </button>
+                </form>
+            </div>
+
+            <!-- Colonne 2 : Avis en cours -->
+            <div class="card">
+                <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
+                    <div>
+                        <div class="card-title">📋 Avis de Recherche Récents</div>
+                        <div class="card-subtitle">Visualisez les alertes actives et géolocalisées.</div>
+                    </div>
+                    <button class="btn-secondary" onclick="loadAlerts()">🔄 Actualiser</button>
+                </div>
+
+                <div id="alertsList" class="alerts-list">
+                    <div class="empty-state">Chargement des avis...</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Leaflet JS -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script>
+        let map;
+        let marker;
+        let circle;
+        let base64Photo = null;
+
+        // Initialisation de la carte Leaflet
+        function initMap() {
+            const defaultLat = 48.8566;
+            const defaultLon = 2.3522;
+            const defaultRadiusKm = 5;
+
+            map = L.map('map').setView([defaultLat, defaultLon], 12);
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                maxZoom: 19,
+                attribution: '© OpenStreetMap'
+            }).addTo(map);
+
+            marker = L.marker([defaultLat, defaultLon], { draggable: true }).addTo(map);
+            circle = L.circle([defaultLat, defaultLon], {
+                color: '#f97316',
+                fillColor: '#f97316',
+                fillOpacity: 0.2,
+                radius: defaultRadiusKm * 1000
+            }).addTo(map);
+
+            // Clic sur la carte pour déplacer le point
+            map.on('click', function(e) {
+                setMapPosition(e.latlng.lat, e.latlng.lng);
+            });
+
+            // Déplacement du marqueur
+            marker.on('dragend', function(e) {
+                const pos = marker.getLatLng();
+                setMapPosition(pos.lat, pos.lng);
+            });
+        }
+
+        function setMapPosition(lat, lon) {
+            lat = parseFloat(lat);
+            lon = parseFloat(lon);
+            marker.setLatLng([lat, lon]);
+            circle.setLatLng([lat, lon]);
+            document.getElementById('latitude').value = lat;
+            document.getElementById('longitude').value = lon;
+        }
+
+        function updateRadius(val) {
+            const km = parseFloat(val);
+            document.getElementById('radiusBadge').innerText = km + ' km';
+            if (circle) {
+                circle.setRadius(km * 1000);
+            }
+        }
+
+        // Géolocalisation navigateur
+        function locateUser() {
+            if (navigator.geolocation) {
+                navigator.geolocation.getCurrentPosition(
+                    pos => {
+                        const lat = pos.coords.latitude;
+                        const lon = pos.coords.longitude;
+                        map.setView([lat, lon], 13);
+                        setMapPosition(lat, lon);
+                    },
+                    err => alert("Impossible d'obtenir votre position : " + err.message)
+                );
+            } else {
+                alert("La géolocalisation n'est pas supportée par ce navigateur.");
+            }
+        }
+
+        // Recherche d'adresse via OpenStreetMap Nominatim
+        async function searchAddress() {
+            const query = document.getElementById('addressSearch').value.trim();
+            if (!query) return;
+
+            try {
+                const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}`);
+                const data = await res.json();
+                if (data && data.length > 0) {
+                    const lat = parseFloat(data[0].lat);
+                    const lon = parseFloat(data[0].lon);
+                    map.setView([lat, lon], 13);
+                    setMapPosition(lat, lon);
+                } else {
+                    alert("Aucun résultat pour cette adresse.");
+                }
+            } catch (e) {
+                alert("Erreur de recherche : " + e.message);
+            }
+        }
+
+        // Compression et conversion de la photo en Base64
+        function handlePhotoUpload(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const img = new Image();
+                img.onload = function() {
+                    const canvas = document.createElement('canvas');
+                    const MAX_WIDTH = 800;
+                    const MAX_HEIGHT = 800;
+                    let width = img.width;
+                    let height = img.height;
+
+                    if (width > height) {
+                        if (width > MAX_WIDTH) {
+                            height *= MAX_WIDTH / width;
+                            width = MAX_WIDTH;
+                        }
+                    } else {
+                        if (height > MAX_HEIGHT) {
+                            width *= MAX_HEIGHT / height;
+                            height = MAX_HEIGHT;
+                        }
+                    }
+
+                    canvas.width = width;
+                    canvas.height = height;
+                    const ctx = canvas.getContext('2d');
+                    ctx.drawImage(img, 0, 0, width, height);
+
+                    base64Photo = canvas.toDataURL('image/jpeg', 0.82);
+
+                    const preview = document.getElementById('photoPreview');
+                    preview.src = base64Photo;
+                    preview.style.display = 'block';
+                    document.getElementById('uploadHint').style.display = 'none';
+                };
+                img.src = e.target.result;
+            };
+            reader.readAsDataURL(file);
+        }
+
+        // Publication de l'avis
+        async function submitAlert() {
+            const name = document.getElementById('catName').value.trim();
+            const ownerName = document.getElementById('ownerName').value.trim();
+            const contact = document.getElementById('contactInfo').value.trim();
+            const description = document.getElementById('catDesc').value.trim();
+            const latitude = parseFloat(document.getElementById('latitude').value);
+            const longitude = parseFloat(document.getElementById('longitude').value);
+            const radiusKm = parseFloat(document.getElementById('radiusInput').value);
+
+            if (!name || !contact) {
+                alert("Veuillez renseigner le nom du chat et vos informations de contact.");
+                return;
+            }
+
+            const btn = document.getElementById('submitBtn');
+            btn.disabled = true;
+            btn.innerText = "Publication en cours...";
+
+            try {
+                const response = await fetch('/api/missing-cats', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        name,
+                        ownerName,
+                        contact,
+                        description,
+                        photo: base64Photo,
+                        latitude,
+                        longitude,
+                        radiusKm
+                    })
+                });
+
+                const data = await response.json();
+                if (response.ok && data.success) {
+                    alert(`✅ Avis de recherche publié avec succès pour ${name} !`);
+                    document.getElementById('alertForm').reset();
+                    base64Photo = null;
+                    document.getElementById('photoPreview').style.display = 'none';
+                    document.getElementById('uploadHint').style.display = 'block';
+                    updateRadius(5);
+                    loadAlerts();
+                } else {
+                    alert("Erreur lors de la publication : " + (data.error || "Inconnue"));
+                }
+            } catch (err) {
+                alert("Erreur réseau : " + err.message);
+            } finally {
+                btn.disabled = false;
+                btn.innerText = "📢 Diffuser l'avis de recherche félin";
+            }
+        }
+
+        // Chargement des avis
+        async function loadAlerts() {
+            const listEl = document.getElementById('alertsList');
+            listEl.innerHTML = '<div class="empty-state">Chargement...</div>';
+
+            try {
+                const res = await fetch('/api/missing-cats?all=true');
+                const alerts = await res.json();
+
+                if (!alerts || alerts.length === 0) {
+                    listEl.innerHTML = '<div class="empty-state">Aucun avis de recherche pour le moment.</div>';
+                    return;
+                }
+
+                const now = Date.now();
+                listEl.innerHTML = alerts.map(alert => {
+                    const isFound = alert.isFound;
+                    const isExpired = now > alert.expiresAt;
+                    let statusClass = 'badge-active';
+                    let statusText = 'En cours';
+
+                    if (isFound) {
+                        statusClass = 'badge-found';
+                        statusText = 'Secouru / Retrouvé';
+                    } else if (isExpired) {
+                        statusClass = 'badge-expired';
+                        statusText = 'Expiré (7j)';
+                    }
+
+                    // Calcul temps restant
+                    const remainingHours = Math.max(0, Math.round((alert.expiresAt - now) / (1000 * 60 * 60)));
+                    const remainingDays = Math.floor(remainingHours / 24);
+                    const remainingText = isFound ? 'Retrouvé' : isExpired ? 'Expiré' : `${remainingDays}j ${remainingHours % 24}h restantes`;
+
+                    const photoSrc = alert.photo || 'https://images.unsplash.com/photo-1514888286974-6c03e2ca1dba?w=200&auto=format&fit=crop&q=60';
+
+                    return `
+                        <div class="alert-card ${isFound ? 'status-found' : isExpired ? 'status-expired' : ''}">
+                            <img src="${photoSrc}" class="alert-img" alt="${alert.name}">
+                            <div class="alert-details">
+                                <div class="alert-name-row">
+                                    <div class="alert-name">${escapeHtml(alert.name)}</div>
+                                    <span class="badge-status ${statusClass}">${statusText}</span>
+                                </div>
+                                <div class="alert-meta">
+                                    ${alert.ownerName ? `👤 Proprio : <strong>${escapeHtml(alert.ownerName)}</strong> • ` : ''}
+                                    📞 Contact : <strong>${escapeHtml(alert.contact)}</strong><br>
+                                    📍 Zone : Rayon de <strong>${alert.radiusKm} km</strong> • ⏱️ ${remainingText}
+                                </div>
+                                ${alert.description ? `<div class="alert-desc">${escapeHtml(alert.description)}</div>` : ''}
+                                <div class="alert-actions">
+                                    ${!isFound && !isExpired ? `
+                                        <button class="btn-action btn-found" onclick="markFound('${alert.id}')">✅ Marquer Retrouvé</button>
+                                    ` : ''}
+                                    <button class="btn-action btn-center" onclick="centerOnAlert(${alert.latitude}, ${alert.longitude}, ${alert.radiusKm})">🗺️ Voir la zone</button>
+                                    <button class="btn-action btn-delete" onclick="deleteAlert('${alert.id}')">🗑️ Supprimer</button>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+            } catch (err) {
+                listEl.innerHTML = `<div class="empty-state">Erreur de chargement : ${err.message}</div>`;
+            }
+        }
+
+        async function markFound(id) {
+            if (!confirm("Confirmer que ce chat a été retrouvé ? L'avis arrêtera d'être diffusé.")) return;
+            try {
+                const res = await fetch(`/api/missing-cats/${id}/found`, { method: 'POST' });
+                if (res.ok) {
+                    loadAlerts();
+                } else {
+                    alert("Erreur lors de la mise à jour.");
+                }
+            } catch (e) {
+                alert("Erreur réseau.");
+            }
+        }
+
+        async function deleteAlert(id) {
+            if (!confirm("Voulez-vous vraiment supprimer cet avis ?")) return;
+            try {
+                const res = await fetch(`/api/missing-cats/${id}`, { method: 'DELETE' });
+                if (res.ok) {
+                    loadAlerts();
+                } else {
+                    alert("Erreur lors de la suppression.");
+                }
+            } catch (e) {
+                alert("Erreur réseau.");
+            }
+        }
+
+        function centerOnAlert(lat, lon, radiusKm) {
+            map.setView([lat, lon], 13);
+            setMapPosition(lat, lon);
+            updateRadius(radiusKm);
+            document.getElementById('radiusInput').value = radiusKm;
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+
+        function escapeHtml(str) {
+            if (!str) return '';
+            return str.replace(/[&<>"']/g, m => ({
+                '&': '&amp;',
+                '<': '&lt;',
+                '>': '&gt;',
+                '"': '&quot;',
+                "'": '&#39;'
+            }[m]));
+        }
+
+        window.onload = function() {
+            initMap();
+            loadAlerts();
+        };
+    </script>
+</body>
+</html>
